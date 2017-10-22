@@ -1,0 +1,137 @@
+import numpy as np
+import math
+import torch
+from torch.autograd import Variable
+from torch.nn import Module, Parameter, Embedding, Linear, ReLU, Sigmoid, BCEWithLogitsLoss
+from operations import wrap, exp_lr_scheduler, to_binary
+
+
+class SigmoidVariationalBowModel(Module):
+    def __init__(self, input_dim, output_dim, embedding_dim, num_latent_factors, use_cuda=None):
+        super(SigmoidVariationalBowModel, self).__init__()
+
+        self.num_samples = 0
+
+        self.input_embedding = Embedding(num_embeddings=input_dim, embedding_dim=embedding_dim)
+        self.input_embedding.weight.data.uniform_(-1. / math.sqrt(input_dim), 1. / math.sqrt(input_dim))
+        self.output_embedding = Embedding(num_embeddings=output_dim, embedding_dim=num_latent_factors)
+
+        self.input_bias = Parameter(torch.zeros(embedding_dim))
+        self.output_bias = Parameter(torch.zeros(output_dim))
+
+        self.mu = Linear(embedding_dim, num_latent_factors, bias=True)
+        self.logvar = Linear(embedding_dim, num_latent_factors, bias=True)
+
+        self.lr_scheduler = exp_lr_scheduler
+        self.lr = 0.001
+        self.optimizer = None
+
+        self.relu = ReLU()
+        self.label_loss = BCEWithLogitsLoss()
+        self.sigmoid = Sigmoid()
+
+        if use_cuda is None:
+            use_cuda = torch.cuda.is_available()
+        self.use_cuda = use_cuda
+        if self.use_cuda:
+            self.cuda()
+
+    def live_params(self):
+        return [param for param in self.parameters() if param.requires_grad]
+
+    def build_optimizer(self):
+        self.optimizer = torch.optim.Adam(self.live_params(), lr=self.lr)
+
+    def cuda(self, device_id=None):
+        super(SigmoidVariationalBowModel, self).cuda(device_id)
+        self.use_cuda = True
+
+    def encode(self, x):
+        embedding = torch.bmm((x > 0).float().unsqueeze(dim=1), self.input_embedding(x)).squeeze(dim=1)
+        embedding = self.relu(embedding + self.input_bias)
+        return self.mu(embedding), self.logvar(embedding)
+
+    def sample_z(self, mu, logvar):
+        std = logvar.mul(0.5).exp_()
+        if self.use_cuda:
+            eps = torch.cuda.FloatTensor(std.size()).normal_()
+        else:
+            eps = torch.FloatTensor(std.size()).normal_()
+        eps = Variable(eps)
+        return eps.mul(std).add_(mu)
+
+    def decode(self, z):
+        logits = z.mm(self.output_embedding.weight.t())
+        logits = logits + self.output_bias
+        return logits
+
+    def forward(self, x):
+        mu, logvar = self.encode(x)
+        z = self.sample_z(mu, logvar)
+        return self.decode(z), mu, logvar
+
+    def loss(self, x, y):
+        y_hat, mu, logvar = self.forward(x)
+        label_loss = self.label_loss(y_hat, to_binary(y, y_hat.size(), use_cuda=self.use_cuda))
+        KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / np.product(x.size())
+
+        return label_loss, KLD
+
+    def predict(self, x, num_samples=None):
+        mu, logvar = self.encode(x)
+        if num_samples is None:
+            num_samples = self.num_samples
+        if num_samples == 0:
+            return self.decode(mu)
+        else:
+            samples = [self.decode(self.sample_z(mu, logvar)) for i in range(num_samples)]
+            return torch.stack(samples).mean(dim=0)
+
+    def fit(self, dataset, batch_size, num_epochs=1, verbose=True):
+        self.train(True)
+        if self.optimizer is None:
+            self.build_optimizer()
+
+        fit_loss = []
+        for epoch in range(num_epochs):
+            self.lr = self.lr_scheduler(self.optimizer, epoch)
+            epoch_loss = []
+
+            # Iterate over data.
+            for x, y in dataset.batches(batch_size):
+                # get the inputs
+                inputs, labels = wrap(self, (torch.from_numpy(x).long(), torch.from_numpy(y).long()))
+
+                # zero the parameter gradients
+                self.optimizer.zero_grad()
+                label_loss, KLD = self.loss(inputs, labels)
+                loss = label_loss + KLD
+                loss.backward()
+                self.optimizer.step()
+
+                # statistics
+                if verbose:
+                    print(loss, "=", label_loss, "+", KLD)
+                epoch_loss.append(loss.data)
+            fit_loss.append(np.mean(epoch_loss))
+        return fit_loss
+
+    def evaluate(self, dataset):
+        self.train(False)
+
+        result = []
+        # Iterate over data.
+        for x, y in dataset.batches():
+            # get the inputs
+            inputs, labels = wrap(self, (torch.from_numpy(x).long(), torch.from_numpy(y).long()))
+            result.append(self.predict(inputs).numpy())
+
+        return np.vstack(result)
+
+    def save(self, filename):
+        torch.save({"state_dict": self.state_dict(), "lr": self.lr}, filename)
+
+    def load(self, filename):
+        data = torch.load(filename)
+        self.load_state_dict(data["state_dict"])
+        self.lr = data["lr"]
