@@ -1,9 +1,10 @@
 import numpy as np
 import math
+import time
 import torch
 from torch.autograd import Variable
 from torch.nn import Module, Parameter, Embedding, Linear, ReLU, Sigmoid, BCEWithLogitsLoss
-from operations import wrap, exp_lr_scheduler, to_binary
+from operations import variable, numpy, exp_lr_scheduler, to_binary
 
 
 class SigmoidVariationalBowModel(Module):
@@ -72,8 +73,8 @@ class SigmoidVariationalBowModel(Module):
 
     def loss(self, x, y):
         y_hat, mu, logvar = self.forward(x)
-        label_loss = self.label_loss(y_hat, to_binary(y, y_hat.size(), use_cuda=self.use_cuda))
-        KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / np.product(x.size())
+        label_loss = self.label_loss(y_hat, Variable(to_binary(y, y_hat.size(), use_cuda=self.use_cuda)))
+        KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / float(np.product(x.size()))
 
         return label_loss, KLD
 
@@ -87,7 +88,7 @@ class SigmoidVariationalBowModel(Module):
             samples = [self.decode(self.sample_z(mu, logvar)) for i in range(num_samples)]
             return torch.stack(samples).mean(dim=0)
 
-    def fit(self, dataset, batch_size, num_epochs=1, verbose=True):
+    def fit(self, dataset, batch_size, num_epochs=1, verbose=0):
         self.train(True)
         if self.optimizer is None:
             self.build_optimizer()
@@ -96,11 +97,12 @@ class SigmoidVariationalBowModel(Module):
         for epoch in range(num_epochs):
             self.lr = self.lr_scheduler(self.optimizer, epoch)
             epoch_loss = []
+            timer = time.time()
 
             # Iterate over data.
             for x, y in dataset.batches(batch_size):
                 # get the inputs
-                inputs, labels = wrap(self, (torch.from_numpy(x).long(), torch.from_numpy(y).long()))
+                inputs, labels = variable(self, (torch.from_numpy(x).long(), torch.from_numpy(y).long()))
 
                 # zero the parameter gradients
                 self.optimizer.zero_grad()
@@ -110,9 +112,23 @@ class SigmoidVariationalBowModel(Module):
                 self.optimizer.step()
 
                 # statistics
-                if verbose:
-                    print(loss, "=", label_loss, "+", KLD)
-                epoch_loss.append(loss.data)
+                if verbose > 1:
+                    print("Batch",
+                          len(epoch_loss),
+                          "loss:",
+                          numpy(self, loss),
+                          "=",
+                          numpy(self, label_loss),
+                          "+",
+                          numpy(self, KLD),
+                          "average time:",
+                          (time.time() - timer) / float(len(epoch_loss) + 1))
+                epoch_loss.append((numpy(self, label_loss)[0], numpy(self, KLD)[0]))
+            if verbose > 0:
+                print("loss =",
+                      np.mean(epoch_loss, axis=0),
+                      "time =",
+                      time.time() - timer)
             fit_loss.append(np.mean(epoch_loss))
         return fit_loss
 
@@ -123,7 +139,7 @@ class SigmoidVariationalBowModel(Module):
         # Iterate over data.
         for x, y in dataset.batches():
             # get the inputs
-            inputs, labels = wrap(self, (torch.from_numpy(x).long(), torch.from_numpy(y).long()))
+            inputs, labels = variable(self, (torch.from_numpy(x).long(), torch.from_numpy(y).long()))
             result.append(self.predict(inputs).numpy())
 
         return np.vstack(result)

@@ -8,14 +8,14 @@ def test_model():
 
     data = dataset.BowFileDataset(stopword_file="stopwords.txt")
     data.load_vocab("10k.txt", 1000)
-    data.load_vne("10k.txt")
+    data.load("10k.txt")
     print(data.input_length)
 
     model = models.SigmoidVariationalBowModel(input_dim=data.vocab_size(),
                                               output_dim=data.vocab_size(),
                                               embedding_dim=embedding_dim,
                                               num_latent_factors=num_latent_factors)
-    model.fit(data, batch_size=16)
+    model.fit(data, batch_size=16, num_epochs=5, verbose=1)
     model.save("vne.model")
 
 

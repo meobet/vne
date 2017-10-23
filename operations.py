@@ -11,7 +11,7 @@ def to_binary(index, output_size, use_cuda=False):
     return zeros.scatter_(1, index.data, 1.)
 
 
-def wrap(model, data):
+def variable(model, data):
     def _wrap(model, data):
         if model.use_cuda:
             return tuple(Variable(tensor.cuda()) for tensor in data)
@@ -22,11 +22,21 @@ def wrap(model, data):
     else:
         return _wrap(model, (data, ))[0]
 
-def unwrap(model, data):
-    if model.use_cuda:
-        return tuple(variable.cpu() for variable in data)
+
+def tensor(model, data):
+    def _unwrap(model, data):
+        if model.use_cuda:
+            return tuple(variable.cpu().data for variable in data)
+        else:
+            return tuple(variable.data for variable in data)
+    if type(data) is tuple or type(data) is list:
+        return _unwrap(model, data)
     else:
-        return tuple(variable for variable in data)
+        return _unwrap(model, (data, ))[0]
+
+
+def numpy(model, data):
+    return tensor(model, data).numpy()
 
 
 def exp_lr_scheduler(optimizer, epoch, init_lr=0.001, decay=0.1, lr_decay_epoch=7):
