@@ -132,15 +132,17 @@ class SigmoidVariationalBowModel(Module):
             fit_loss.append(np.mean(epoch_loss))
         return fit_loss
 
-    def rank(self, dataset):
+    def top_n(self, dataset, n, batch_size, verbose=0):
         self.train(False)
-
+        timer = time.time()
         result = []
         # Iterate over data.
-        for x, y in dataset.batches():
+        for x, y in dataset.batches(batch_size=batch_size):
             # get the inputs
             inputs, labels = variable(self, (torch.from_numpy(x).long(), torch.from_numpy(y).long()))
-            result.append(self.predict(inputs).numpy())
+            if verbose > 0:
+                print("Batch", len(result), "average time:", (time.time() - timer) / float(len(result) + 1))
+            result.append(numpy(self, self.predict(inputs)).argsort(axis=1)[:, -1:-n-1:-1].copy())
 
         return np.vstack(result)
 

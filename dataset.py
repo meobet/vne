@@ -1,4 +1,5 @@
 import numpy as np
+import pickle
 from collections import Counter
 
 
@@ -21,6 +22,14 @@ class TextFileDataset(object):
     def load_vocab(self, filename, vocab_size):
         self.word_to_index, self.input_length = build_dictionary(filename, vocab_size, self.delimiter, self.position)
         self.index_to_word = {w: i for i, w in self.word_to_index.items()}
+
+    def save_vocab(self, filename):
+        with open(filename, "wb") as target:
+            pickle.dump((self.word_to_index, self.index_to_word, self.input_length), target)
+
+    def reload_vocab(self, filename):
+        with open(filename, "rb") as source:
+            self.word_to_index, self.index_to_word, self.input_length = pickle.load(source)
 
     def vocab_size(self):
         return len(self.word_to_index) + 1
