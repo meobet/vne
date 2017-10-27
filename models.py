@@ -132,7 +132,7 @@ class SigmoidVariationalBowModel(Module):
             fit_loss.append(np.mean(epoch_loss))
         return fit_loss
 
-    def evaluate(self, dataset):
+    def rank(self, dataset):
         self.train(False)
 
         result = []
