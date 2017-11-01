@@ -11,20 +11,19 @@ def test_model():
     # print(data.vocab_size())
     # data.save_vocab("vne.10k.vocab")
     data.reload_vocab("vne.10k.vocab")
-    data.load("1k.txt")
+    data.load("vne_lower.txt")
     print(data.input_length)
 
     model = models.SigmoidVariationalBowModel(input_dim=data.vocab_size(),
                                               output_dim=data.vocab_size(),
                                               embedding_dim=embedding_dim,
                                               num_latent_factors=num_latent_factors)
-    model.load("vne.model")
-    # model.fit(data, batch_size=128, num_epochs=1, verbose=2)
-    # model.save("vne.5.model")
-    ranks = model.top_n(data, n=40, batch_size=128, verbose=1)
+    model.load("vne.2.model")
+    # model.fit(data, batch_size=128, num_epochs=2, verbose=2)
+    # model.save("vne.2.model")
+    ranks = model.rank(data, batch_size=128, verbose=1)
     for i in range(20):
         print(data.text(ranks[i]))
 
 if __name__ == "__main__":
     test_model()
-

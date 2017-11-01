@@ -146,6 +146,23 @@ class SigmoidVariationalBowModel(Module):
 
         return np.vstack(result)
 
+    def rank(self, dataset, batch_size, verbose=0):
+        self.train(False)
+        timer = time.time()
+        result = []
+        # Iterate over data.
+        for x, y in dataset.batches(batch_size=batch_size):
+            # get the inputs
+            inputs, labels = variable(self, (torch.from_numpy(x).long(), torch.from_numpy(y).long()))
+            if verbose > 0:
+                print("Batch", len(result), "average time:", (time.time() - timer) / float(len(result) + 1))
+            candidates = [x[x > 0] for x in numpy(self, inputs)]
+            outputs = [sorted(zip(x, y[x]), key=lambda t: t[1])
+                       for x, y in zip(candidates, numpy(self, self.predict(inputs)))]
+            result.extend([[y[0] for y in x[::-1]] for x in outputs])
+
+        return result
+
     def save(self, filename):
         torch.save({"state_dict": self.state_dict(), "lr": self.lr}, filename)
 
