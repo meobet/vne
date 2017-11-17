@@ -4,11 +4,18 @@ import torch
 from torch.autograd import Variable
 
 
+# df/dx - f must be a function or module
+def gradient(f, x):
+    x = Variable(x.data, requires_grad=True)
+    f(x).backward()
+    return x.grad
+
+
 def to_binary(index, output_size, use_cuda=False):
     zeros = torch.zeros(output_size)
     if use_cuda:
         zeros = zeros.cuda()
-    return zeros.scatter_(1, index.data, 1.)
+    return zeros.scatter_(1, index, 1.)
 
 
 def variable(model, data):

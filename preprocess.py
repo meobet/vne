@@ -81,10 +81,22 @@ def lower_all(filename, outname, delimiter="\t"):
                 tokens[j] = tokens[j].lower()
             target.write(delimiter.join(tokens) + "\n")
 
+def remove_links(filename, outname, delimiter="\t"):
+    with open(filename, "r", encoding="utf-8") as source, open(outname, "w", encoding="utf-8") as target:
+        for i, line in enumerate(source):
+            print(i)
+            tokens = line.strip().split(delimiter)
+            for j in [3]:
+                idx = tokens[j].find(" >")
+                if idx >= 0:
+                    tokens[j] = tokens[j][:idx]
+            target.write(delimiter.join(tokens) + "\n")
+
 
 if __name__ == "__main__":
     # normalize("vne.txt", "vne_norm.txt")
     # verify("vne_norm.txt", "\t")
     # tokenize("sample.txt", "sample.txt")
     # replace_numbers("vne_token.txt", "vne_tokenized.txt")
-    lower_all("vne_tokenized.txt", "vne_lower.txt")
+    # lower_all("vne_tokenized.txt", "vne_lower.txt")
+    remove_links("vne_lower.txt", "vne.txt")

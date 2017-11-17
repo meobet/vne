@@ -12,6 +12,7 @@ class SigmoidVariationalBowModel(Module):
         super(SigmoidVariationalBowModel, self).__init__()
 
         self.num_samples = 0
+        self.num_latent_factors = num_latent_factors
 
         self.input_embedding = Embedding(num_embeddings=input_dim, embedding_dim=embedding_dim)
         self.input_embedding.weight.data.uniform_(-1. / math.sqrt(input_dim), 1. / math.sqrt(input_dim))
@@ -73,7 +74,7 @@ class SigmoidVariationalBowModel(Module):
 
     def loss(self, x, y):
         y_hat, mu, logvar = self.forward(x)
-        label_loss = self.label_loss(y_hat, Variable(to_binary(y, y_hat.size(), use_cuda=self.use_cuda)))
+        label_loss = self.label_loss(y_hat, Variable(to_binary(y.data, y_hat.size(), use_cuda=self.use_cuda)))
         KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / float(np.product(x.size()))
 
         return label_loss, KLD
@@ -132,36 +133,53 @@ class SigmoidVariationalBowModel(Module):
             fit_loss.append(np.mean(epoch_loss))
         return fit_loss
 
-    def top_n(self, dataset, n, batch_size, verbose=0):
+    def top_n(self, dataset, n, batch_size, num_batches=None, verbose=0):
         self.train(False)
         timer = time.time()
         result = []
+        batch_count = 0.
         # Iterate over data.
         for x, y in dataset.batches(batch_size=batch_size):
             # get the inputs
             inputs, labels = variable(self, (torch.from_numpy(x).long(), torch.from_numpy(y).long()))
+            batch_count += 1
+            if num_batches is not None and batch_count > num_batches:
+                break
             if verbose > 0:
-                print("Batch", len(result), "average time:", (time.time() - timer) / float(len(result) + 1))
+                print("Batch", batch_count, "average time:", (time.time() - timer) / batch_count)
             result.append(numpy(self, self.predict(inputs)).argsort(axis=1)[:, -1:-n-1:-1].copy())
 
         return np.vstack(result)
 
-    def rank(self, dataset, batch_size, verbose=0):
+    def rank(self, dataset, batch_size, num_batches=None, verbose=0):
         self.train(False)
         timer = time.time()
         result = []
+        batch_count = 0.
         # Iterate over data.
         for x, y in dataset.batches(batch_size=batch_size):
             # get the inputs
             inputs, labels = variable(self, (torch.from_numpy(x).long(), torch.from_numpy(y).long()))
+            batch_count += 1
+            if num_batches is not None and batch_count > num_batches:
+                break
             if verbose > 0:
-                print("Batch", len(result), "average time:", (time.time() - timer) / float(len(result) + 1))
+                print("Batch", batch_count, "average time:", (time.time() - timer) / batch_count)
             candidates = [x[x > 0] for x in numpy(self, inputs)]
             outputs = [sorted(zip(x, y[x]), key=lambda t: t[1])
                        for x, y in zip(candidates, numpy(self, self.predict(inputs)))]
             result.extend([[y[0] for y in x[::-1]] for x in outputs])
 
         return result
+
+    def sample_from_latent(self, num_samples, top_n):
+        self.train(False)
+        latents = variable(self, torch.randn(num_samples, self.num_latent_factors))
+        return numpy(self, self.decode(latents)).argsort(axis=1)[:, -1:-top_n-1:-1].copy(), \
+               np.linalg.norm(numpy(self, latents), axis=1)
+
+    def ml_estimate(self, dataset, batch_size, num_batches=None, verbose=0):
+        self.train(False)
 
     def save(self, filename):
         torch.save({"state_dict": self.state_dict(), "lr": self.lr}, filename)
