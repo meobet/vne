@@ -107,6 +107,18 @@ class SigmoidVariationalBowModel(Module):
             samples = [self.decode(self.sample_z(mu, logvar)) for i in range(num_samples)]
             return torch.stack(samples).mean(dim=0)
 
+    def posterior_latent(self, x, num_traces=100, num_samples=100):
+        posterior = Importance(self.pyro_model, self.pyro_guide, num_traces)
+        marginal = Marginal(posterior)
+        return torch.stack([marginal(x) for _ in range(num_samples)])
+
+    def predict_from_posterior(self, x, num_traces=100, num_samples=100, z_mean=True):
+        z_sample = self.posterior_latent(x, num_traces, num_samples)
+        if z_mean:
+            return self.decode(z_sample.mean(dim=0))
+        else:
+            return self.decode(z_sample).mean(dim=0)
+
     def fit(self, dataset, batch_size, num_epochs=1, verbose=0):
         self.train(True)
         svi = SVI(self.pyro_model, self.pyro_guide, Adam({"lr": self.lr}), loss="ELBO")
@@ -118,8 +130,8 @@ class SigmoidVariationalBowModel(Module):
 
             # Iterate over data.
             for x, y in dataset.batches(batch_size):
-                x = to_binary(torch.from_numpy(x).long(), (x.shape[0], self.input_dim), use_cuda=self.use_cuda)
-                inputs = variable(self, x)
+                inputs = to_binary(torch.from_numpy(x).long(), (x.shape[0], self.input_dim), use_cuda=self.use_cuda)
+                inputs = variable(self, inputs)
                 loss = svi.step(inputs)
 
                 # statistics
@@ -147,14 +159,15 @@ class SigmoidVariationalBowModel(Module):
         # Iterate over data.
         for x, y in dataset.batches(batch_size=batch_size):
             # get the inputs
-            x = to_binary(torch.from_numpy(x).long(), (x.size(0), self.input_dim), use_cuda=self.use_cuda)
-            inputs = variable(self, x)
+            inputs = to_binary(torch.from_numpy(x).long(), (x.shape[0 ], self.input_dim), use_cuda=self.use_cuda)
+            inputs = variable(self, inputs)
             batch_count += 1
             if num_batches is not None and batch_count > num_batches:
                 break
             if verbose > 0:
                 print("Batch", batch_count, "average time:", (time.time() - timer) / batch_count)
-            result.append(numpy(self, self.predict(inputs)).argsort(axis=1)[:, -1:-n-1:-1].copy())
+            result.append(numpy(self, self.predict_from_posterior(inputs))
+                          .argsort(axis=1)[:, -1:-n-1:-1].copy())
 
         return np.vstack(result)
 
@@ -166,14 +179,14 @@ class SigmoidVariationalBowModel(Module):
         # Iterate over data.
         for x, y in dataset.batches(batch_size=batch_size):
             # get the inputs
-            x = to_binary(torch.from_numpy(x).long(), (x.size(0), self.input_dim), use_cuda=self.use_cuda)
-            inputs = variable(self, x)
+            inputs = to_binary(torch.from_numpy(x).long(), (x.shape[0], self.input_dim), use_cuda=self.use_cuda)
+            inputs = variable(self, inputs)
             batch_count += 1
             if num_batches is not None and batch_count > num_batches:
                 break
             if verbose > 0:
                 print("Batch", batch_count, "average time:", (time.time() - timer) / batch_count)
-            candidates = [x[x > 0] for x in numpy(self, inputs)]
+            candidates = [t[t > 0].astype(int) for t in x]
             outputs = [sorted(zip(x, y[x]), key=lambda t: t[1])
                        for x, y in zip(candidates, numpy(self, self.predict(inputs)))]
             result.extend([[y[0] for y in x[::-1]] for x in outputs])

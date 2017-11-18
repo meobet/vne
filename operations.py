@@ -15,6 +15,7 @@ def to_binary(index, output_size, use_cuda=False):
     zeros = torch.zeros(output_size)
     if use_cuda:
         zeros = zeros.cuda()
+        index = index.cuda()
     return zeros.scatter_(1, index, 1.)
 
 
