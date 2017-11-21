@@ -112,12 +112,21 @@ class SigmoidVariationalBowModel(Module):
         marginal = Marginal(posterior)
         return torch.stack([marginal(x) for _ in range(num_samples)])
 
+    def variational_latent(self, x, num_traces=100, num_samples=100):
+        z_mu, z_sigma = self.encode(x)
+        return torch.stack([pyro.sample("latent", dist.normal, z_mu, torch.exp(z_sigma)) for _ in range(num_samples)])
+
     def predict_from_posterior(self, x, num_traces=100, num_samples=100, z_mean=True):
-        z_sample = self.posterior_latent(x, num_traces, num_samples)
+        z_sample = self.variational_latent(x, num_traces, num_samples)
         if z_mean:
             return self.decode(z_sample.mean(dim=0))
         else:
             return self.decode(z_sample).mean(dim=0)
+
+    def posterior_rv(self, x, num_traces=100, num_samples=100):
+        z_sample = self.variational_latent(x, num_traces, num_samples)
+        out_prob = (self.sigmoid(self.decode(z_sample)) + fudge) * (1 - 2 * fudge)
+        return 1.0 / (1.0 / out_prob).mean(dim=0)
 
     def fit(self, dataset, batch_size, num_epochs=1, verbose=0):
         self.train(True)
@@ -151,47 +160,38 @@ class SigmoidVariationalBowModel(Module):
             fit_loss.append(np.mean(epoch_loss))
         return fit_loss
 
-    def top_n(self, dataset, n, batch_size, num_batches=None, verbose=0):
+    def top_n(self, x, y, n):
+        inputs = to_binary(torch.from_numpy(x).long(), (x.shape[0], self.input_dim), use_cuda=self.use_cuda)
+        inputs = variable(self, inputs)
+        return numpy(self, self.predict_from_posterior(inputs, z_mean=False)).argsort(axis=1)[:, -1:-n-1:-1]
+
+    def top_n_rv(self, x, y, n):
+        inputs = to_binary(torch.from_numpy(x).long(), (x.shape[0], self.input_dim), use_cuda=self.use_cuda)
+        inputs = variable(self, inputs)
+        return numpy(self, self.posterior_rv(inputs)).argsort(axis=1)[:, -1:-n-1:-1]
+
+    def rank(self, x, y):
+        inputs = to_binary(torch.from_numpy(x).long(), (x.shape[0], self.input_dim), use_cuda=self.use_cuda)
+        inputs = variable(self, inputs)
+        candidates = [t[t > 0].astype(int) for t in x]
+        outputs = [sorted(zip(x, y[x]), key=lambda t: t[1])
+                   for x, y in zip(candidates, numpy(self, self.predict(inputs)))]
+        return [[y[0] for y in x[::-1]] for x in outputs]
+
+    def iterate(self, function, dataset, batch_size, num_batches=None, verbose=0, **kwargs):
         self.train(False)
         timer = time.time()
         result = []
         batch_count = 0.
         # Iterate over data.
         for x, y in dataset.batches(batch_size=batch_size):
-            # get the inputs
-            inputs = to_binary(torch.from_numpy(x).long(), (x.shape[0 ], self.input_dim), use_cuda=self.use_cuda)
-            inputs = variable(self, inputs)
+            result.append(function(x, y, **kwargs).copy())
             batch_count += 1
             if num_batches is not None and batch_count > num_batches:
                 break
             if verbose > 0:
                 print("Batch", batch_count, "average time:", (time.time() - timer) / batch_count)
-            result.append(numpy(self, self.predict_from_posterior(inputs))
-                          .argsort(axis=1)[:, -1:-n-1:-1].copy())
-
         return np.vstack(result)
-
-    def rank(self, dataset, batch_size, num_batches=None, verbose=0):
-        self.train(False)
-        timer = time.time()
-        result = []
-        batch_count = 0.
-        # Iterate over data.
-        for x, y in dataset.batches(batch_size=batch_size):
-            # get the inputs
-            inputs = to_binary(torch.from_numpy(x).long(), (x.shape[0], self.input_dim), use_cuda=self.use_cuda)
-            inputs = variable(self, inputs)
-            batch_count += 1
-            if num_batches is not None and batch_count > num_batches:
-                break
-            if verbose > 0:
-                print("Batch", batch_count, "average time:", (time.time() - timer) / batch_count)
-            candidates = [t[t > 0].astype(int) for t in x]
-            outputs = [sorted(zip(x, y[x]), key=lambda t: t[1])
-                       for x, y in zip(candidates, numpy(self, self.predict(inputs)))]
-            result.extend([[y[0] for y in x[::-1]] for x in outputs])
-
-        return result
 
     def sample_from_latent(self, num_samples, top_n):
         self.train(False)

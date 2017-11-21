@@ -15,21 +15,26 @@ def test_model():
     # print(data.vocab_size())
     # data.save_vocab("vne.10k.vocab")
     data.reload_vocab("vne.10k.vocab")
-    data.load("vne.txt")
+    data.load("vne.txt.train")
     print(data.input_length)
 
     model = pyro_test.SigmoidVariationalBowModel(input_dim=data.vocab_size(),
                                               output_dim=data.vocab_size(),
                                               embedding_dim=embedding_dim,
                                               num_latent_factors=num_latent_factors)
-    model.load("pyro.vne.5.model")
-    # model.fit(data, batch_size=128, num_epochs=5, verbose=2)
-    # model.save("pyro.vne.5.model")
-    # ranks, norms = model.sample_from_latent(20, 20)
-    # ranks = model.rank(data, batch_size=128, num_batches=1, verbose=1)
-    ranks = model.top_n(data, batch_size=32, num_batches=1, verbose=1, n=20)
+    # model.load("pyro.vne.10.model")
+    model.fit(data, batch_size=128, num_epochs=5, verbose=2)
+    model.save("train.5.model")
+    top_n, norms = model.sample_from_latent(20, 20)
+    x, y = data.batch(20)
+    top_n = model.top_n(x, y, n=20)
+    top_n_rv = model.top_n_rv(x, y, n=20)
+    ranks = [r[:20] for r in model.rank(x, y)]
     for i in range(20):
+        print(data.text(top_n[i]))
+        print(data.text(top_n_rv[i]))
         print(data.text(ranks[i]))
+        print()
 
 if __name__ == "__main__":
     test_model()

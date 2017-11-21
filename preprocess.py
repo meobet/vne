@@ -1,6 +1,6 @@
 from pyvi.pyvi import ViTokenizer
 from string import punctuation
-
+from sklearn.model_selection import train_test_split
 
 def is_punctuations(token):
     return all(x in punctuation for x in token)
@@ -81,6 +81,7 @@ def lower_all(filename, outname, delimiter="\t"):
                 tokens[j] = tokens[j].lower()
             target.write(delimiter.join(tokens) + "\n")
 
+
 def remove_links(filename, outname, delimiter="\t"):
     with open(filename, "r", encoding="utf-8") as source, open(outname, "w", encoding="utf-8") as target:
         for i, line in enumerate(source):
@@ -93,10 +94,21 @@ def remove_links(filename, outname, delimiter="\t"):
             target.write(delimiter.join(tokens) + "\n")
 
 
+def split_file(filename, test_size=0.1):
+    with open(filename, "r", encoding="utf-8") as source:
+        lines = source.readlines()
+    x, y = train_test_split(lines, test_size=test_size)
+    with open(filename + ".train", "w", encoding="utf-8") as target:
+        target.writelines(x)
+    with open(filename + ".test", "w", encoding="utf-8") as target:
+        target.writelines(y)
+
+
 if __name__ == "__main__":
     # normalize("vne.txt", "vne_norm.txt")
     # verify("vne_norm.txt", "\t")
     # tokenize("sample.txt", "sample.txt")
     # replace_numbers("vne_token.txt", "vne_tokenized.txt")
     # lower_all("vne_tokenized.txt", "vne_lower.txt")
-    remove_links("vne_lower.txt", "vne.txt")
+    # remove_links("vne_lower.txt", "vne.txt")
+    split_file("vne.txt")
