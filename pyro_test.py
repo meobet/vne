@@ -76,7 +76,7 @@ class SigmoidVariationalBowModel(Module):
     def loss(self, x, y):
         y_hat, mu, logvar = self.forward(x)
         label_loss = self.label_loss(y_hat, Variable(to_binary(y.data, y_hat.size(), use_cuda=self.use_cuda)))
-        KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / float(np.product(x.size()))
+        KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
 
         return label_loss, KLD
 
@@ -127,6 +127,52 @@ class SigmoidVariationalBowModel(Module):
         z_sample = self.variational_latent(x, num_traces, num_samples)
         out_prob = (self.sigmoid(self.decode(z_sample)) + fudge) * (1 - 2 * fudge)
         return 1.0 / (1.0 / out_prob).mean(dim=0)
+
+    def fit_direct(self, dataset, batch_size, num_epochs=1, verbose=0):
+        self.train(True)
+        if self.optimizer is None:
+            self.build_optimizer()
+
+        fit_loss = []
+        for epoch in range(num_epochs):
+            self.lr = self.lr_scheduler(self.optimizer, epoch)
+            epoch_loss = []
+            timer = time.time()
+
+            # Iterate over data.
+            for x, y in dataset.batches(batch_size):
+                # get the inputs
+                inputs = to_binary(torch.from_numpy(x).long(), (x.shape[0], self.input_dim), use_cuda=self.use_cuda)
+                inputs = variable(self, inputs)
+                labels = variable(self, torch.from_numpy(y).long())
+
+                # zero the parameter gradients
+                self.optimizer.zero_grad()
+                label_loss, KLD = self.loss(inputs, labels)
+                loss = label_loss + KLD
+                loss.backward()
+                self.optimizer.step()
+
+                # statistics
+                if verbose > 1:
+                    print("Batch",
+                          len(epoch_loss),
+                          "loss:",
+                          numpy(self, loss),
+                          "=",
+                          numpy(self, label_loss),
+                          "+",
+                          numpy(self, KLD),
+                          "average time:",
+                          (time.time() - timer) / float(len(epoch_loss) + 1))
+                epoch_loss.append((numpy(self, label_loss)[0], numpy(self, KLD)[0]))
+            if verbose > 0:
+                print("loss =",
+                      np.mean(epoch_loss, axis=0),
+                      "time =",
+                      time.time() - timer)
+            fit_loss.append(np.mean(epoch_loss))
+        return fit_loss
 
     def fit(self, dataset, batch_size, num_epochs=1, verbose=0):
         self.train(True)
