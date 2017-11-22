@@ -76,7 +76,7 @@ class SigmoidVariationalBowModel(Module):
     def loss(self, x, y):
         y_hat, mu, logvar = self.forward(x)
         label_loss = self.label_loss(y_hat, Variable(to_binary(y.data, y_hat.size(), use_cuda=self.use_cuda)))
-        KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+        KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / (x.size(0) * self.input_dim)
 
         return label_loss, KLD
 

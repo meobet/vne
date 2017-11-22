@@ -22,12 +22,12 @@ def test_model():
                                               output_dim=data.vocab_size(),
                                               embedding_dim=embedding_dim,
                                               num_latent_factors=num_latent_factors)
-    model.load("train.5.model")
-    # model.fit(data, batch_size=128, num_epochs=1, verbose=2)
-    # model.save("train.1.model")
+    # model.load("train.5.model")
+    model.fit_direct(data, batch_size=512, num_epochs=10, verbose=2)
+    model.save("direct.10.model")
     top_n, norms = model.sample_from_latent(20, 20)
     x, y = data.batch(20)
-    top_n = model.top_n(x, y, n=20)
+    # top_n = model.top_n(x, y, n=20)
     top_n_rv = model.top_n_rv(x, y, n=20)
     ranks = [r[:20] for r in model.rank(x, y)]
     for i in range(20):
