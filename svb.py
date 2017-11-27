@@ -148,7 +148,7 @@ class SigmoidVariationalBowModel(Module):
 
                 # zero the parameter gradients
                 self.optimizer.zero_grad()
-                label_loss, KLD = self.loss(inputs, labels)
+                label_loss, KLD = self.loss(inputs)
                 loss = label_loss + KLD
                 loss.backward()
                 self.optimizer.step()
