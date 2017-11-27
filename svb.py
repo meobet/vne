@@ -21,11 +21,12 @@ class SigmoidVariationalBowModel(Module):
         self.input_dim = input_dim
         self.num_latent_factors = num_latent_factors
 
-        self.input_embedding = Linear(input_dim, embedding_dim)
-        self.output_embedding = Linear(num_latent_factors, input_dim)
+        self.input_embedding = Linear(input_dim, embedding_dim, bias=True)
+        self.output_embedding = Linear(num_latent_factors, embedding_dim, bias=True)
 
         self.mu = Linear(embedding_dim, num_latent_factors, bias=True)
         self.logvar = Linear(embedding_dim, num_latent_factors, bias=True)
+        self.logits = Linear(embedding_dim, input_dim, bias=True)
 
         self.lr_scheduler = exp_lr_scheduler
         self.lr = 0.001
@@ -65,7 +66,7 @@ class SigmoidVariationalBowModel(Module):
         return eps.mul(std).add_(mu)
 
     def decode(self, z):
-        return self.output_embedding(z)
+        return self.logits(self.relu(self.output_embedding(z)))
 
     def forward(self, x):
         mu, logvar = self.encode(x)

@@ -34,6 +34,8 @@ def test_model():
         # print(data.text(top_n_rv[i]))
         print(data.text(ranks[i]))
         print()
+    model.cpu()
+    model.save("direct.cpu.10.model")
 
 if __name__ == "__main__":
     test_model()
