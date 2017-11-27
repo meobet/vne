@@ -3,19 +3,18 @@ import math
 import time
 import torch
 from torch.autograd import Variable
-from torch.nn import Module, Parameter, Embedding, Linear, ReLU, Softplus, Sigmoid, BCEWithLogitsLoss
+from torch.nn import Module, Linear, ReLU, Softplus, Sigmoid, BCEWithLogitsLoss
 from operations import variable, numpy, exp_lr_scheduler, to_binary
 
 import pyro
 from pyro.infer import SVI, Importance, Marginal
 from pyro.optim import Adam
-from pyro.util import ng_zeros, ng_ones
 import pyro.distributions as dist
 
 fudge = 1e-7
 
 class SigmoidVariationalBowModel(Module):
-    def __init__(self, input_dim, output_dim, embedding_dim, num_latent_factors, use_cuda=None):
+    def __init__(self, input_dim, embedding_dim, num_latent_factors, use_cuda=None):
         super(SigmoidVariationalBowModel, self).__init__()
 
         self.num_samples = 0
@@ -23,7 +22,7 @@ class SigmoidVariationalBowModel(Module):
         self.num_latent_factors = num_latent_factors
 
         self.input_embedding = Linear(input_dim, embedding_dim)
-        self.output_embedding = Linear(num_latent_factors, output_dim)
+        self.output_embedding = Linear(num_latent_factors, input_dim)
 
         self.mu = Linear(embedding_dim, num_latent_factors, bias=True)
         self.logvar = Linear(embedding_dim, num_latent_factors, bias=True)
@@ -73,9 +72,9 @@ class SigmoidVariationalBowModel(Module):
         z = self.sample_z(mu, logvar)
         return self.decode(z), mu, logvar
 
-    def loss(self, x, y):
-        y_hat, mu, logvar = self.forward(x)
-        label_loss = self.label_loss(y_hat, Variable(to_binary(y.data, y_hat.size(), use_cuda=self.use_cuda)))
+    def loss(self, x):
+        x_hat, mu, logvar = self.forward(x)
+        label_loss = self.label_loss(x_hat, x)
         KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / (x.size(0) * self.input_dim)
 
         return label_loss, KLD
